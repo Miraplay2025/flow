@@ -1,6 +1,6 @@
 FROM node:18-slim
 
-# Instala apenas as dependências reais necessárias para o Chrome rodar
+# Instala dependências do sistema para o Chrome
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -45,13 +45,13 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY package*.json ./
+
+# PULO DO GATO: Impede o download do Chrome pelo NPM para não congelar o build
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+
 RUN npm install
 
 COPY . .
-
-# Garante que o Puppeteer baixe o Chrome dentro do container
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
 EXPOSE 3000
 
