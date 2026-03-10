@@ -1,9 +1,9 @@
 FROM node:18-slim
 
-# Instala dependências necessárias para o Chrome rodar no Linux
+# Instala apenas as dependências reais necessárias para o Chrome rodar
 RUN apt-get update && apt-get install -y \
-    gpg conf \
-    cursor \
+    wget \
+    gnupg \
     ca-certificates \
     fonts-liberation \
     libasound2 \
@@ -38,7 +38,6 @@ RUN apt-get update && apt-get install -y \
     libxss1 \
     libxtst6 \
     lsb-release \
-    wget \
     xdg-utils \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
@@ -50,8 +49,9 @@ RUN npm install
 
 COPY . .
 
-# Variável de ambiente para o Puppeteer encontrar o Chrome
+# Garante que o Puppeteer baixe o Chrome dentro do container
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
 EXPOSE 3000
 
