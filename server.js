@@ -6,55 +6,59 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-const PHP_URL = "https://livestream.ct.ws/extensao/log.php";
+app.post('/auth', async (req, res) => {
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+        return res.status(400).json({ status: "error", message: "E-mail e senha obrigatórios." });
+    }
 
-app.get('/', (req, res) => res.send("Servidor Ativo"));
-
-app.post('/login-proxy', async (req, res) => {
-    const { email, senha } = req.body;
     let browser;
-
     try {
-        // Lançamento ultra-leve para não estourar a RAM de 512MB do Render
+        // Inicia o navegador com os argumentos necessários para rodar no Docker/Render
         browser = await puppeteer.launch({
             headless: "new",
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-gpu',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
                 '--no-zygote',
-                '--single-process' 
-            ]
+                '--disable-gpu'
+            ],
+            executablePath: '/usr/bin/google-chrome-stable' // Otimizado para o Docker
         });
 
         const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36');
+        
+        // URL da sua hospedagem na InfinityFree
+        const loginUrl = `http://livestream.ct.ws/extensão/log.php?email=${encodeURIComponent(email)}&pass=${encodeURIComponent(password)}`;
+        
+        console.log(`Verificando login para: ${email}`);
+        
+        // Navega até o PHP (isso resolve o desafio AES do JavaScript da InfinityFree automaticamente)
+        await page.goto(loginUrl, { waitUntil: 'networkidle2', timeout: 30000 });
 
-        // Acessa para quebrar o desafio do InfinityFree
-        await page.goto(PHP_URL, { waitUntil: 'networkidle2', timeout: 60000 });
-
-        const result = await page.evaluate(async (url, e, s) => {
-            const fd = new FormData();
-            fd.append('email', e);
-            fd.append('senha', s);
-            const resp = await fetch(url, { method: 'POST', body: fd });
-            return await resp.text();
-        }, PHP_URL, email, senha);
-
+        // Pega o texto da página (que deve ser o seu JSON do PHP)
+        const responseText = await page.evaluate(() => document.body.innerText);
+        
         try {
-            res.json(JSON.parse(result));
-        } catch {
-            res.json({ status: "server_raw", data: result });
+            const jsonResponse = JSON.parse(responseText);
+            res.json(jsonResponse);
+        } catch (e) {
+            res.status(500).json({ status: "error", message: "Resposta do servidor inválida.", details: responseText });
         }
 
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ status: "error", message: err.message });
+    } catch (error) {
+        console.error("Erro no Puppeteer:", error);
+        res.status(500).json({ status: "error", message: "Erro de conexão com o servidor de autenticação." });
     } finally {
         if (browser) await browser.close();
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Rodando na porta ${PORT}`));
+app.listen(PORT, () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
+});
