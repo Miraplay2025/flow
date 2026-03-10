@@ -8,56 +8,52 @@ app.use(cors());
 
 const PHP_URL = "https://livestream.ct.ws/extensao/log.php";
 
+// Rota de teste para o Cron-job
+app.get('/', (req, res) => res.send("Proxy Ativo 24h"));
+
 app.post('/login-proxy', async (req, res) => {
     const { email, senha } = req.body;
-
-    if (!email || !senha) {
-        return res.status(400).json({ status: "error", message: "Dados incompletos" });
-    }
-
     let browser;
+
     try {
         browser = await puppeteer.launch({
             headless: "new",
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage', // Importante para o Render não travar
+                '--disable-gpu'
+            ]
         });
 
         const page = await browser.newPage();
-        
-        // Define um User-Agent real para evitar ser detectado como bot
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36');
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36');
 
-        // 1. Acessa a URL via GET primeiro para quebrar o desafio do InfinityFree
-        await page.goto(PHP_URL, { waitUntil: 'networkidle2' });
+        // Resolve o desafio inicial
+        await page.goto(PHP_URL, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // 2. Executa o POST usando o contexto do navegador (que já tem os cookies do desafio resolvido)
-        const result = await page.evaluate(async (url, email, senha) => {
-            const formData = new FormData();
-            formData.append('email', email);
-            formData.append('senha', senha);
-
-            const response = await fetch(url, {
-                method: 'POST',
-                body: formData
-            });
-            return await response.text();
+        // Executa o POST dentro do navegador já autenticado pelo cookie __test
+        const result = await page.evaluate(async (url, e, s) => {
+            const fd = new FormData();
+            fd.append('email', e);
+            fd.append('senha', s);
+            const resp = await fetch(url, { method: 'POST', body: fd });
+            return await resp.text();
         }, PHP_URL, email, senha);
 
-        // Tenta converter a resposta para JSON, se falhar, envia o texto puro (HTML de erro)
         try {
-            const jsonResponse = JSON.parse(result);
-            res.json(jsonResponse);
-        } catch (e) {
-            res.json({ status: "html_response", content: result });
+            res.json(JSON.parse(result));
+        } catch {
+            res.json({ status: "server_response", data: result });
         }
 
-    } catch (error) {
-        console.error("Erro no Proxy:", error);
-        res.status(500).json({ status: "error", message: "Erro no servidor Render: " + error.message });
+    } catch (err) {
+        res.status(500).json({ status: "error", message: err.message });
     } finally {
         if (browser) await browser.close();
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Proxy rodando na porta ${PORT}`));
+app.listen(PORT, () => console.log(`Rodando na porta ${PORT}`));
